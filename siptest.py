@@ -46,7 +46,7 @@ def validate_date_format(date_string, row_number, identifier, file_name):
 
 def validate_csv_file(file_path, required_fields):
     try:
-        with open(file_path, 'r', encoding='utf-8') as csv_file:
+       with open(file_path, 'r', encoding='utf-8-sig', newline='') as csv_file:
             reader = csv.DictReader(csv_file)
             fields = reader.fieldnames
 
