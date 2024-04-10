@@ -11,7 +11,7 @@ non_unique_rows = []
 required_collection_fields = ['identifier', 'title', 'description', 'visibility', 'rights_holder', 'rights']
 required_item_fields = ['identifier', 'title', 'description', 'display_date', 'start_date', 'end_date',
                         'rights_holder', 'rights', 'tags','type',
-                        'language', 'extent', 'visibility']
+                        'language','visibility']
 
 def has_special_characters(text):
     special_characters = r'[@#$%&*/!]'
