@@ -4,9 +4,9 @@ The SIP (Submission Information Package) Validator is a Python script designed t
 - Python 3.x 
 - Standard Python libraries: os, csv, re, datetime
 # Usage
-1.	Save the script as sip_validator.py.
+1.	Save the script as sip-validator.py.
 2.	Run the script in a terminal or command prompt: 
-python sip_validator_working.py
+python3 sip-validator.py
 3.	Enter the path to the SIP root folder when prompted.
 # Functionality
 1. Folder and File Existence Check
@@ -24,7 +24,7 @@ collection_metadata.csv
 - Unique Identifier Check: Ensures each identifier is unique.
 - Special Character Check: Looks for special characters in each field.
 item_metadata.csv
-- Required Fields: identifier, title, description, creator, display_date, start_date, end_date, rights_holder, rights_statement, tags, parent_collection, coverage, type, language, extent, visibility, location.
+- Required Fields: identifier, title, description, creator, display_date, start_date, end_date, rights_holder, rights, tags, coverage, type, language, extent, visibility, location.
 - Unique Identifier Check: Ensures each identifier is unique.
 - Special Character Check: Looks for special characters in each field.
 3. Validation Results
