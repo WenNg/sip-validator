@@ -12,7 +12,7 @@ python3 sip-validator.py
 1. Folder and File Existence Check
 The script verifies the existence of the following folders and files in the SIP:
 - Data: Files
-- Manifest: checksumsha1, virusscanoutput_Collection1, virusscanoutput_Collection1.txt
+- Manifest: checksumsha1
 - Metadata: collection_metadata.csv, item_metadata.csv.
 - README: (read me of what is in the folder).
 - Supporting Information: Deposit Agreement Folder, Memorandum of Agreement Folder
@@ -24,7 +24,7 @@ collection_metadata.csv
 - Unique Identifier Check: Ensures each identifier is unique.
 - Special Character Check: Looks for special characters in each field.
 item_metadata.csv
-- Required Fields: identifier, title, description, creator, display_date, start_date, end_date, rights_holder, rights, tags, coverage, type, language, extent, visibility, location.
+- Required Fields: identifier, title, description, creator, display_date, start_date, end_date, rights_holder, rights, tags, coverage, type, language, visibility, location.
 - Unique Identifier Check: Ensures each identifier is unique.
 - Special Character Check: Looks for special characters in each field.
 3. Validation Results
@@ -33,6 +33,6 @@ Validation results are saved in a receipt file (validation_receipt.txt) within t
 - Non-Unique Identifiers: Lists rows with non-unique identifiers (if applicable).
 - Validation Success: Indicates successful validation if no errors are found.
 * Example - 
-python sip_validator.py
+python3 sip-validator.py
 * Enter the path to your SIP root folder: /path/to/sip_root
 - Validation completed. Receipt saved to: /path/to/sip_root/validation_receipt.txt
