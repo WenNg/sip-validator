@@ -1,4 +1,4 @@
-# siptest-validator
+# sip-validator
 The SIP (Submission Information Package) Validator is a Python script designed to validate the structure and content of a SIP directory. A SIP typically consists of digital objects, metadata files, supporting information, a manifest, and a Readme file. The script checks for the presence of expected folders and files, validates CSV files' structure, and ensures data integrity.
 # Prerequisites
 - Python 3.x 
