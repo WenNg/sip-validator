@@ -15,8 +15,6 @@ The script verifies the existence of the following folders and files in the SIP:
 - Manifest: checksumsha1
 - Metadata: collection_metadata.csv, item_metadata.csv.
 - README: (read me of what is in the folder).
-- Supporting Information: Deposit Agreement Folder, Memorandum of Agreement Folder
-
 2. CSV File Validation
 The script checks the structure and content of collection_metadata.csv and item_metadata.csv:
 collection_metadata.csv
