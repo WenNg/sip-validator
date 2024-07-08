@@ -2,203 +2,237 @@ import os
 import csv
 import re
 from datetime import datetime
-from collections import OrderedDict
+from urllib.parse import urlparse
+import time
+from PIL import Image
 
-def validate_date_format(date_text):
-    try:
-        datetime.strptime(date_text, '%Y/%m/%d')
-        return True
-    except ValueError:
-        return False
+class SIPValidator:
+    def __init__(self):
+        self.errors = []
+        self.non_unique_rows = []
 
-def validate_special_characters(string):
-    return bool(re.match(r'^[a-zA-Z0-9@#$%&*/!\']+$', string.lower()))
+        ## make dynamic for these variables
+        self.required_collection_fields = ['identifier', 'title', 'description', 'visibility', 'rights_holder', 'rights']
+        self.required_item_fields = ['identifier', 'title', 'description', 'display_date', 'start_date', 'end_date',
+                                     'rights_holder', 'rights', 'tags','type', 'language','visibility']
 
-def check_directory_structure(root_path):
-    required_folders = ['Data', 'Manifest', 'Metadata']
-    errors = OrderedDict()
-    try:
-        existing_folders = os.listdir(root_path)
-    except Exception as e:
-        errors[f"Error accessing directory {root_path}: {str(e)}"] = None
-        return errors
-    
-    extra_folders = [folder for folder in existing_folders if folder not in required_folders and os.path.isdir(os.path.join(root_path, folder))]
-    for folder in required_folders:
-        matched_folders = [f for f in existing_folders if re.match(rf'{folder}[^a-zA-Z0-9]*$', f, re.IGNORECASE)]
-        if not matched_folders:
-            errors[f"Missing required folder: {folder}"] = None
-        else:
-            for matched_folder in matched_folders:
-                if matched_folder != folder:
-                    errors[f"Folder name should be {folder} but found {matched_folder}"] = None
-                elif not validate_special_characters(matched_folder):
-                    errors[f"Folder name contains special characters: {matched_folder}"] = None
-    if extra_folders:
-        errors[f"Extra folders found: {', '.join(extra_folders)}"] = None
-    if not any(fname.startswith('README') and fname.split('.')[-1] in ['txt', 'md'] for fname in existing_folders):
-        errors["Missing README file with .txt or .md extension"] = None
-    if not errors:
-        errors["Directory structure is valid."] = None
-    return errors
+    def has_special_characters(self, text):
+        special_characters = r'[@#$%&*/!]'
 
-def check_files(root_path):
-    manifest_path = os.path.join(root_path, 'Manifest')
-    metadata_path = os.path.join(root_path, 'Metadata')
-    
-    errors = OrderedDict()
-    # Checking manifest
-    if not os.path.exists(manifest_path):
-        errors["Missing required folder: Manifest"] = None
-    else:
+        if text is None:
+            return False
+
+        parsed_url = urlparse(text)
+        if parsed_url.scheme and parsed_url.netloc:
+            return False
+
+        return bool(re.search(special_characters, text))
+
+    def check_naming_convention(self, name, folder):
+        if self.has_special_characters(name):
+            self.errors.append(f"Error: Special characters found in '{name}' of folder '{folder}'")
+
+    def check_special_characters_in_fields(self, row, row_number, identifier, file_name, fields):
+        field_errors = []
+        for field in fields:
+            value = row.get(field)
+            if self.has_special_characters(value):
+                field_errors.append(f"Error: Special characters found in '{file_name}', Row {row_number}, Identifier {identifier}, Field '{field}'")
+        return field_errors
+
+    def validate_date_format(self, date_string, row_number, identifier, file_name):
         try:
-            manifest_files = os.listdir(manifest_path)
-        except Exception as e:
-            errors[f"Error accessing Manifest folder: {str(e)}"] = None
-            return errors
-        if 'checksumsha1.csv' not in manifest_files:
-            errors["Missing required file: checksumsha1.csv in Manifest folder"] = None
-        extra_files = [file for file in manifest_files if file != 'checksumsha1.csv']
-        if extra_files:
-            errors[f"Extra files found in Manifest folder: {', '.join(extra_files)}"] = None
-    
-    # Checking metadata
-    if not os.path.exists(metadata_path):
-        errors["Missing required folder: Metadata"] = None
-    else:
+            datetime.strptime(date_string, '%Y-%m-%d')
+        except ValueError:
+            self.errors.append(f"Error: Incorrect date format in '{file_name}', Row {row_number}")
+
+    def validate_csv_file(self, file_path, required_fields):
         try:
-            metadata_files = os.listdir(metadata_path)
-        except Exception as e:
-            errors[f"Error accessing Metadata folder: {str(e)}"] = None
-            return errors
-        pattern_collection = re.compile(r'.*collection_metadata\.csv')
-        pattern_item = re.compile(r'.*item_metadata\.csv')
-        collection_found = any(pattern_collection.match(file.lower()) for file in metadata_files)
-        item_found = any(pattern_item.match(file.lower()) for file in metadata_files)
-        
-        if not collection_found:
-            errors["Missing required *collection_metadata.csv file in Metadata folder"] = None
-        if not item_found:
-            errors["Missing required *item_metadata.csv file in Metadata folder"] = None
-        required_files = {'collection_metadata': collection_found, 'item_metadata': item_found}
-        for file_type, found in required_files.items():
-            if found:
-                extra_files = [file for file in metadata_files if not pattern_collection.match(file.lower()) and not pattern_item.match(file.lower())]
-                if extra_files:
-                    errors[f"Extra files found in Metadata folder: {', '.join(extra_files)}"] = None
-    
-    if not errors:
-        errors["All required files inside the folders are present."] = None
-    return errors
+            with open(file_path, 'r', encoding='utf-8-sig', newline='') as csv_file:
+                reader = csv.DictReader(csv_file)
+                fields = reader.fieldnames
 
-def read_csv_file(file_path):
-    try:
-        with open(file_path, mode='r', newline='', encoding='utf-8') as file:
-            reader = csv.DictReader((line.lower() for line in file))
-            return list(reader)
-    except UnicodeDecodeError:
-        try:
-            with open(file_path, mode='r', newline='', encoding='latin1') as file:
-                reader = csv.DictReader((line.lower() for line in file))
-                return list(reader)
-        except Exception as e:
-            return str(e)
-    except Exception as e:
-        return str(e)
+                if sorted(required_fields) != sorted(fields):
+                    incorrect_missing_fields = [field for field in fields if field not in required_fields]
 
-def validate_metadata_files(root_path):
-    metadata_path = os.path.join(root_path, 'Metadata')
-    receipt = OrderedDict()
-    required_fields = ['identifier', 'title', 'description', 'visibility', 'rights_holder']
-    
-    if not os.path.exists(metadata_path):
-        receipt["Missing required folder: Metadata"] = None
-        return receipt
-    
-    # Scan for all metadata files that match the patterns
-    for file_name in os.listdir(metadata_path):
-        if re.search(r'(collection_metadata\.csv|item_metadata\.csv)$', file_name.lower()):
-            file_path = os.path.join(metadata_path, file_name)
-            rows = read_csv_file(file_path)
-            if isinstance(rows, str):  # An error message was returned
-                receipt[f"Validation error in {file_name}: {rows}"] = None
-                continue
-            if not rows:
-                receipt[f"Validation error in {file_name}: Could not read file or file is empty"] = None
-                continue
-
-            fieldnames_lower = [field.strip() for field in rows[0].keys()]
-                
-            # Check field names once
-            missing_field = False
-            for field in required_fields:
-                matched_fields = [f for f in fieldnames_lower if re.match(rf'{field}[^a-zA-Z0-9]*$', f, re.IGNORECASE)]
-                if not matched_fields:
-                    receipt[f"Validation error in {file_name}: Missing required column {field}"] = None
-                    missing_field = True
-                else:
-                    for matched_field in matched_fields:
-                        if matched_field != field:
-                            receipt[f"Validation error in {file_name}: Field name should be {field} but found {matched_field}"] = None
-                            missing_field = True
-                        elif field != 'rights_holder' and not validate_special_characters(matched_field):
-                            receipt[f"Validation error in {file_name}: Field name contains special characters: {matched_field}"] = None
-                            missing_field = True
-
-            # If any required field is missing or incorrect, skip row validation
-            if missing_field:
-                continue
-
-            # Check each row for content
-            for row in rows:
-                identifier = row.get('identifier', 'unknown').strip()
-                
-                # Validate identifier
-                if not validate_special_characters(identifier):
-                    receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid identifier."] = None
-                
-                # Validate date format
-                date = row.get('date', '').strip()
-                if date and not validate_date_format(date):
-                    receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid date format."] = None
-                
-                # Required fields check
                 for field in required_fields:
-                    if field not in row or not row[field].strip():
-                        receipt[f"Validation error in {file_name} (identifier {identifier}): Missing or invalid {field}."] = None
+                    if field not in fields:
+                        self.errors.append(f"Error: Missing required field '{field}' in '{os.path.basename(file_path)}'")
 
-    return receipt
+                identifiers = set()
+                for row_number, row in enumerate(reader, start=2): 
+                    identifier = row.get('identifier')
+                    if identifier in identifiers:
+                        self.non_unique_rows.append(row)
+                    else:
+                        identifiers.add(identifier)
 
-def write_validation_receipt(receipt, root_path):
-    receipt_path = os.path.join(root_path, 'validation_receipt.txt')
-    with open(receipt_path, 'w') as file:
-        for line in receipt:
-            file.write(line + '\n')
-        if any("Missing required folder" in line or "Validation error" in line or "Folder name should be" in line for line in receipt):
-            file.write("Validation failed.\n")
+                    start_date = row.get('start_date')
+                    if start_date:
+                        self.validate_date_format(start_date, row_number, identifier, os.path.basename(file_path))
 
-def main():
-    root_path = input("Enter the path to the SIP directory: ")
-    
-    issues = OrderedDict()
+                    field_errors = self.check_special_characters_in_fields(row, row_number, identifier, os.path.basename(file_path), fields)
+                self.errors.extend(field_errors)
+        except Exception as e:
+            self.errors.append(f"Error reading CSV file '{os.path.basename(file_path)}': {str(e)}")
 
-    # Validate directory structure
-    issues.update(check_directory_structure(root_path))
-    
-    # Check files presence
-    issues.update(check_files(root_path))
-    
-    # Validate metadata
-    validation_receipt = validate_metadata_files(root_path)
-    issues.update(validation_receipt)
+        return self.errors, self.non_unique_rows
 
-    if issues:
-        for issue in issues:
-            print(issue)
-        write_validation_receipt(issues, root_path)
-        print(f"Validation receipt has been written to {os.path.join(root_path, 'validation_receipt.txt')}")
-    else:
-        print("All checks passed. No issues found.")
+    def validate_folder_structure(self, sip_root_path, expected_structure):
+        for folder, items in expected_structure.items():
+            folder_path = os.path.join(sip_root_path, folder)
+            self.check_naming_convention(folder, "")
 
-if __name__ == "__main__":
-    main()
+            if not os.path.exists(folder_path):
+                self.errors.append(f"Error: Missing folder '{folder}'")
+
+            for item in items:
+                if item.lower().endswith('.csv'):
+                    item_regex = re.compile(r".*?" + re.escape(item) + r"$", re.IGNORECASE)
+                    csv_files = [file for file in os.listdir(folder_path) if item_regex.match(file)]
+                    for csv_file in csv_files:
+                        item_path = os.path.join(folder_path, csv_file)
+                        self.validate_csv_file(item_path, self.required_collection_fields if csv_file.lower() == 'collection_metadata.csv' else self.required_item_fields)
+                else:
+                    item_path = os.path.join(folder_path, item)
+                    self.check_naming_convention(item, folder)
+
+                    if not os.path.exists(item_path):
+                        self.errors.append(f"Error: Missing item '{item}' in folder '{folder}'")
+
+        return self.errors
+
+    def validate_metadata_files(self, metadata_folder):
+        collection_metadata_files = [file for file in os.listdir(metadata_folder) if file.lower().endswith('_collection_metadata.csv')]
+        if not collection_metadata_files:
+            self.errors.append(f"Error: Missing collection metadata file with the expected naming convention in the Metadata folder")
+        else:
+            for collection_metadata_file in collection_metadata_files:
+                self.validate_csv_file(os.path.join(metadata_folder, collection_metadata_file), self.required_collection_fields)
+
+        item_metadata_files = [file for file in os.listdir(metadata_folder) if file.lower().endswith('_item_metadata.csv')]
+        if not item_metadata_files:
+            self.errors.append(f"Error: Missing item metadata file with the expected naming convention in the Metadata folder")
+        else:
+            for item_metadata_file in item_metadata_files:
+                self.validate_csv_file(os.path.join(metadata_folder, item_metadata_file), self.required_item_fields)
+
+        return self.errors
+
+    def validate_digital_objects(self, digital_objects_folder, current_metadata_level):
+
+        #make dynamic
+        acceptable_formats = ['TIFF', 'PDF', 'JPG', 'JPEG', 'PNG', 'GIF', 'WAVE', 'WAV', 'MP3', 'MOV', 'MKV', 'MP4',
+                              'AVI', 'CSV', 'XML', 'XLSX', 'TXT', 'HTML', 'SGML', 'RTF', 'X3D', 'GLB', 'STL', 'CGM',
+                              'PDF/A', 'TIFF', 'SHP', 'SVG','PPTX', 'MBOX' , 'TIF']
+
+        file_formats = set()
+        for root, _, files in os.walk(digital_objects_folder):
+            for file in files:
+                _, file_extension = os.path.splitext(file)
+                file_format = file_extension.upper()[1:]
+                file_formats.add(file_format)
+
+        if not file_formats:
+            self.errors.append(f"Images in Data folder do not have the acceptable file formats.")
+
+        return self.errors
+
+    def validate_special_characters_in_files(self, sip_root_path):
+        for root, dirs, files in os.walk(sip_root_path):
+            for dir in dirs:
+                dir_path = os.path.join(root, dir)
+                self.check_naming_convention(dir, os.path.relpath(dir_path, sip_root_path))
+
+            for file in files:
+                file_path = os.path.join(root, file)
+                if self.has_special_characters(file):
+                    self.errors.append(f"Error: Special characters found in file name '{file_path}'")
+
+    def validate_sip_structure(self, sip_root_path, expected_structure):
+        current_metadata_level = None
+        collection_metadata_name = None
+        existing_collection_metadata = False  # Flag to track if collection_metadata.csv existed before
+        for error in self.errors:
+            if "Bronze" in error:
+                current_metadata_level = "Bronze"
+            elif "Silver" in error:
+                current_metadata_level = "Silver"
+            elif "Gold" in error:
+                current_metadata_level = "Gold"
+
+        folder_structure_errors = self.validate_folder_structure(sip_root_path, expected_structure)
+        self.errors.extend(folder_structure_errors)
+
+        metadata_folder = os.path.join(sip_root_path, 'Metadata')
+        metadata_errors = self.validate_metadata_files(metadata_folder)
+        self.errors.extend(metadata_errors)
+
+        digital_objects_folder = os.path.join(sip_root_path, 'Data')
+        digital_objects_errors = self.validate_digital_objects(digital_objects_folder, current_metadata_level)
+        self.errors.extend(digital_objects_errors)
+
+        self.validate_special_characters_in_files(sip_root_path)
+
+        if 'collection_metadata.csv' in expected_structure.get('Metadata', []):
+            collection_metadata_name = 'collection_metadata.csv'
+            metadata_files = [file.lower() for file in os.listdir(metadata_folder)]
+            if any(file.endswith('collection_metadata.csv') for file in metadata_files):
+                existing_collection_metadata = True  # Marking existing collection_metadata.csv
+            else:
+                supporting_info_folder = os.path.join(sip_root_path, 'Supporting Information')
+                if not os.path.exists(supporting_info_folder):
+                    self.errors.append("Error: Missing Supporting Information folder")
+
+                associated_image_found = False
+                for file in os.listdir(supporting_info_folder):
+                    if file.lower().endswith(('.jpg', '.jpeg', '.png', '.tiff')):
+                        associated_image_found = True
+                        break
+
+                if not associated_image_found:
+                    self.errors.append(f"Error: No associated image found in Supporting Information folder for the '{collection_metadata_name}'")
+
+        return self.errors, collection_metadata_name, existing_collection_metadata
+
+    def generate_receipt(self, sip_root_path, collection_metadata_name, existing_collection_metadata):
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        receipt_path = os.path.join(sip_root_path, f'validation_receipt_{timestamp}.txt')
+
+        for file in os.listdir(sip_root_path):
+            if file.startswith('validation_receipt_') and file.endswith('.txt'):
+                os.remove(os.path.join(sip_root_path, file))
+
+        with open(receipt_path, 'w', encoding='utf-8') as receipt_file:
+            error_set = set(self.errors)
+            self.errors = list(error_set)
+            for error in self.errors:
+                receipt_file.write(f"{error}\n")
+
+            if collection_metadata_name and existing_collection_metadata:
+                receipt_file.write(f"collection_metadata.csv existed before.\n")
+
+            receipt_file.write("\nValidation completed successfully.")
+
+        return receipt_path
+
+# # Example usage
+# if __name__ == "__main__":
+#     validator = SIPValidator()
+#     sip_root_path = 'path_to_sip_root_directory'
+#     expected_structure = {
+#         'Metadata': ['collection_metadata.csv', 'item_metadata.csv'],
+#         'Data': ['data_item_1.jpg', 'data_item_2.pdf'],
+#         'Supporting Information': ['supporting_doc_1.pdf']
+#     }
+
+#     errors, collection_metadata_name, existing_collection_metadata = validator.validate_sip_structure(sip_root_path, expected_structure)
+#     if errors:
+#         print("Errors found during validation:")
+#         for error in errors:
+#             print(error)
+#     else:
+#         print("No errors found.")
+
+#     receipt_path = validator.generate_receipt(sip_root_path, collection_metadata_name, existing_collection_metadata)
+#     print(f"Validation receipt generated at: {receipt_path}")
