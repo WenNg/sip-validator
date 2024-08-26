@@ -109,13 +109,13 @@ def read_csv_file(file_path):
 def validate_metadata_files(root_path):
     metadata_path = os.path.join(root_path, 'Metadata')
     receipt = OrderedDict()
-    required_fields = ['identifier', 'title', 'description', 'visibility', 'rights_holder']
+    required_fields = ['identifier', 'title', 'visibility']
     
     if not os.path.exists(metadata_path):
         receipt["Missing required folder: Metadata"] = None
         return receipt
     
-    # Scan for all metadata files that match the patterns
+    # Ensure either 'rights' or 'license' is present
     for file_name in os.listdir(metadata_path):
         if re.search(r'(collection_metadata\.csv|item_metadata\.csv)$', file_name.lower()):
             file_path = os.path.join(metadata_path, file_name)
@@ -149,7 +149,7 @@ def validate_metadata_files(root_path):
             if missing_field:
                 continue
 
-            # Check each row for content
+            # Validate rights and license fields
             for row in rows:
                 identifier = row.get('identifier', 'unknown').strip()
                 
@@ -157,17 +157,15 @@ def validate_metadata_files(root_path):
                 if not validate_special_characters(identifier):
                     receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid identifier."] = None
                 
-                # Validate date format
-                date = row.get('date', '').strip()
-                if date and not validate_date_format(date):
-                    receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid date format."] = None
-                
-                # Required fields check
-                for field in required_fields:
-                    if field not in row or not row[field].strip():
-                        receipt[f"Validation error in {file_name} (identifier {identifier}): Missing or invalid {field}."] = None
+                # Validate rights or license
+                if 'rights' in row and not re.match(r'https?://rightsstatements.org/vocab/(InC|InC-OW-EU|InC-EDU|InC-NC|InC-RUU|NoC-CR|NoC-NC|NoC-OKLR|NoC-US|CNE|UND|NKC)/1.0/', row['rights'], re.IGNORECASE):
+                    receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid value for rights: {row['rights']}"] = None
+                elif 'license' in row and not re.match(r'https?://creativecommons.org/licenses/(by/2.0|by/4.0|by-sa/4.0|by-nd/4.0|by-nc/4.0|by-nc-sa/4.0|by-nc-nd/4.0)/', row['license'], re.IGNORECASE):
+                    receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid value for license: {row['license']}"] = None
+                elif 'rights' not in row and 'license' not in row:
+                    receipt[f"Validation error in {file_name} (identifier {identifier}): Missing required field: either 'rights' or 'license'"] = None
 
-    return receipt
+    return receipt  # Always return the receipt, even if empty
 
 def write_validation_receipt(receipt, root_path):
     receipt_path = os.path.join(root_path, 'validation_receipt.txt')
