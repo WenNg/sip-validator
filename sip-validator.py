@@ -1,43 +1,49 @@
 import os
 import csv
 import re
-from datetime import datetime
 from collections import OrderedDict
 
-def validate_date_format(date_text):
-    try:
-        datetime.strptime(date_text, '%Y/%m/%d')
-        return True
-    except ValueError:
-        return False
-
 def validate_special_characters(string):
-    return bool(re.match(r'^[a-zA-Z0-9@#$%&*/!\']+$', string.lower()))
+    # Accept only alphanumeric characters and ( ) _ - for identifier validation
+    return bool(re.match(r'^[a-zA-Z0-9\(\)_-]+$', string))
 
 def check_directory_structure(root_path):
-    required_folders = ['Data', 'Manifest', 'Metadata']
+    # Add "Supporting Information" and "readme" to the required folders
+    required_folders = ['Data', 'Manifest', 'Metadata', 'Supporting Information', 'readme']
     errors = OrderedDict()
+    
     try:
         existing_folders = os.listdir(root_path)
     except Exception as e:
         errors[f"Error accessing directory {root_path}: {str(e)}"] = None
         return errors
     
-    extra_folders = [folder for folder in existing_folders if folder not in required_folders and os.path.isdir(os.path.join(root_path, folder))]
+    # Check for required folders without checking capitalization
+    extra_folders = [folder for folder in existing_folders if folder.lower() not in [f.lower() for f in required_folders] and os.path.isdir(os.path.join(root_path, folder))]
     for folder in required_folders:
-        matched_folders = [f for f in existing_folders if re.match(rf'{folder}[^a-zA-Z0-9]*$', f, re.IGNORECASE)]
-        if not matched_folders:
+        if not any(f.lower() == folder.lower() for f in existing_folders):
             errors[f"Missing required folder: {folder}"] = None
-        else:
-            for matched_folder in matched_folders:
-                if matched_folder != folder:
-                    errors[f"Folder name should be {folder} but found {matched_folder}"] = None
-                elif not validate_special_characters(matched_folder):
-                    errors[f"Folder name contains special characters: {matched_folder}"] = None
+    
+    # Check for README.md or README.txt in the root directory or 'readme' folder
+    readme_exists = False
+    for fname in os.listdir(root_path):
+        if fname.lower() in ['readme.md', 'readme.txt']:
+            readme_exists = True
+            break
+    
+    # Also check in a 'readme' folder, if it exists
+    readme_folder = os.path.join(root_path, 'readme')
+    if os.path.exists(readme_folder) and os.path.isdir(readme_folder):
+        for fname in os.listdir(readme_folder):
+            if fname.lower() in ['readme.md', 'readme.txt']:
+                readme_exists = True
+                break
+
+    if not readme_exists:
+        errors["Missing README file with .txt or .md extension"] = None
+    
     if extra_folders:
         errors[f"Extra folders found: {', '.join(extra_folders)}"] = None
-    if not any(fname.startswith('README') and fname.split('.')[-1] in ['txt', 'md'] for fname in existing_folders):
-        errors["Missing README file with .txt or .md extension"] = None
     if not errors:
         errors["Directory structure is valid."] = None
     return errors
