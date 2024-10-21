@@ -3,9 +3,17 @@ import csv
 import re
 from collections import OrderedDict
 
-def validate_special_characters(string):
-    # Accept only alphanumeric characters and ( ) _ - for identifier validation
-    return bool(re.match(r'^[a-zA-Z0-9\(\)_-]+$', string))
+def validate_special_characters(string, allow_spaces=False):
+    """
+    Validate special characters.
+    If allow_spaces is True, allow spaces for folder names.
+    """
+    if allow_spaces:
+        # Accept alphanumeric characters, _ (underscore), - (hyphen), and spaces
+        return bool(re.match(r'^[a-z0-9 _-]+$', string.lower()))
+    else:
+        # Accept only alphanumeric characters, _ (underscore), and - (hyphen)
+        return bool(re.match(r'^[a-z0-9_-]+$', string.lower()))
 
 def check_directory_structure(root_path):
     # Add "Supporting Information" and "readme" to the required folders
@@ -24,6 +32,11 @@ def check_directory_structure(root_path):
         if not any(f.lower() == folder.lower() for f in existing_folders):
             errors[f"Missing required folder: {folder}"] = None
     
+    # Check for special characters in folder names (allow spaces for folder names)
+    for folder in existing_folders:
+        if folder.lower() in [f.lower() for f in required_folders] and not validate_special_characters(folder, allow_spaces=True):
+            errors[f"Folder name contains invalid special characters: {folder}"] = None
+
     # Check for README.md or README.txt in the root directory or 'readme' folder
     readme_exists = False
     for fname in os.listdir(root_path):
@@ -155,7 +168,7 @@ def validate_metadata_files(root_path):
             if missing_field:
                 continue
 
-            # Validate rights and license fields
+            # Validate rights and license fields (allow both http and https)
             for row in rows:
                 identifier = row.get('identifier', 'unknown').strip()
                 
