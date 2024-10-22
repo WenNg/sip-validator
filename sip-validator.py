@@ -15,6 +15,12 @@ def validate_special_characters(string, allow_spaces=False):
         # Accept only alphanumeric characters, _ (underscore), and - (hyphen)
         return bool(re.match(r'^[a-z0-9_-]+$', string.lower()))
 
+def validate_visibility(value):
+    """
+    Validate the visibility field. Accepted values are 'true' or 'false', case insensitive.
+    """
+    return value.lower() in ['true', 'false']
+
 def check_directory_structure(root_path):
     # Add "Supporting Information" and "readme" to the required folders
     required_folders = ['Data', 'Manifest', 'Metadata', 'Supporting Information', 'readme']
@@ -26,16 +32,18 @@ def check_directory_structure(root_path):
         errors[f"Error accessing directory {root_path}: {str(e)}"] = None
         return errors
     
-    # Check for required folders without checking capitalization
-    extra_folders = [folder for folder in existing_folders if folder.lower() not in [f.lower() for f in required_folders] and os.path.isdir(os.path.join(root_path, folder))]
-    for folder in required_folders:
-        if not any(f.lower() == folder.lower() for f in existing_folders):
-            errors[f"Missing required folder: {folder}"] = None
-    
     # Check for special characters in folder names (allow spaces for folder names)
     for folder in existing_folders:
-        if folder.lower() in [f.lower() for f in required_folders] and not validate_special_characters(folder, allow_spaces=True):
-            errors[f"Folder name contains invalid special characters: {folder}"] = None
+        folder_path = os.path.join(root_path, folder)
+        if os.path.isdir(folder_path):  # Only check folders for special characters
+            if not validate_special_characters(folder, allow_spaces=True):
+                errors[f"Folder name contains invalid special characters: {folder}"] = None
+    
+    # Check for required folders without checking capitalization
+    extra_folders = [folder for folder in existing_folders if os.path.isdir(os.path.join(root_path, folder)) and folder.lower() not in [f.lower() for f in required_folders]]
+    for folder in required_folders:
+        if not any(f.lower() == folder.lower() for f in existing_folders if os.path.isdir(os.path.join(root_path, f))):
+            errors[f"Missing required folder: {folder}"] = None
 
     # Check for README.md or README.txt in the root directory or 'readme' folder
     readme_exists = False
@@ -134,7 +142,7 @@ def validate_metadata_files(root_path):
         receipt["Missing required folder: Metadata"] = None
         return receipt
     
-    # Ensure either 'rights' or 'license' is present
+    # Ensure either 'rights' or 'license' is present only for item_metadata.csv
     for file_name in os.listdir(metadata_path):
         if re.search(r'(collection_metadata\.csv|item_metadata\.csv)$', file_name.lower()):
             file_path = os.path.join(metadata_path, file_name)
@@ -160,29 +168,29 @@ def validate_metadata_files(root_path):
                         if matched_field != field:
                             receipt[f"Validation error in {file_name}: Field name should be {field} but found {matched_field}"] = None
                             missing_field = True
-                        elif field != 'rights_holder' and not validate_special_characters(matched_field):
-                            receipt[f"Validation error in {file_name}: Field name contains special characters: {matched_field}"] = None
-                            missing_field = True
+                        elif field == 'visibility' and not validate_visibility(rows[0]['visibility']):
+                            receipt[f"Validation error in {file_name}: Invalid value for visibility: {rows[0]['visibility']} (expected 'true' or 'false')"] = None
 
-            # If any required field is missing or incorrect, skip row validation
-            if missing_field:
-                continue
+            # Skip rights/license validation for collection_metadata.csv
+            if 'collection_metadata.csv' in file_name.lower():
+                continue  # Skip rights/license check for collection_metadata
 
-            # Validate rights and license fields (allow both http and https)
-            for row in rows:
-                identifier = row.get('identifier', 'unknown').strip()
-                
-                # Validate identifier
-                if not validate_special_characters(identifier):
-                    receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid identifier."] = None
-                
-                # Validate rights or license
-                if 'rights' in row and not re.match(r'https?://rightsstatements.org/vocab/(InC|InC-OW-EU|InC-EDU|InC-NC|InC-RUU|NoC-CR|NoC-NC|NoC-OKLR|NoC-US|CNE|UND|NKC)/1.0/', row['rights'], re.IGNORECASE):
-                    receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid value for rights: {row['rights']}"] = None
-                elif 'license' in row and not re.match(r'https?://creativecommons.org/licenses/(by/2.0|by/4.0|by-sa/4.0|by-nd/4.0|by-nc/4.0|by-nc-sa/4.0|by-nc-nd/4.0)/', row['license'], re.IGNORECASE):
-                    receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid value for license: {row['license']}"] = None
-                elif 'rights' not in row and 'license' not in row:
-                    receipt[f"Validation error in {file_name} (identifier {identifier}): Missing required field: either 'rights' or 'license'"] = None
+            # Validate rights and license fields for item_metadata.csv
+            if 'item_metadata.csv' in file_name.lower():
+                for row in rows:
+                    identifier = row.get('identifier', 'unknown').strip()
+                    
+                    # Validate identifier
+                    if not validate_special_characters(identifier):
+                        receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid identifier."] = None
+                    
+                    # Validate rights or license
+                    if 'rights' in row and not re.match(r'https?://rightsstatements.org/vocab/(InC|InC-OW-EU|InC-EDU|InC-NC|InC-RUU|NoC-CR|NoC-NC|NoC-OKLR|NoC-US|CNE|UND|NKC)/1.0/', row['rights'], re.IGNORECASE):
+                        receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid value for rights: {row['rights']}"] = None
+                    elif 'license' in row and not re.match(r'https?://creativecommons.org/licenses/(by/2.0|by/4.0|by-sa/4.0|by-nd/4.0|by-nc/4.0|by-nc-sa/4.0|by-nc-nd/4.0)/', row['license'], re.IGNORECASE):
+                        receipt[f"Validation error in {file_name} (identifier {identifier}): Invalid value for license: {row['license']}"] = None
+                    elif 'rights' not in row and 'license' not in row:
+                        receipt[f"Validation error in {file_name} (identifier {identifier}): Missing required field: either 'rights' or 'license'"] = None
 
     return receipt  # Always return the receipt, even if empty
 
